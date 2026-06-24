@@ -17,24 +17,166 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// -----------------------------
+// URL normalization
+// -----------------------------
 function normalizeUrl(input) {
-  let url = input.trim();
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    url = "https://" + url;
+  try {
+    let raw = input.trim();
+
+    if (!/^https?:\/\//i.test(raw)) {
+      raw = "https://" + raw;
+    }
+
+    const parsed = new URL(raw);
+    const protocol = parsed.protocol.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+
+    let pathname = parsed.pathname || "";
+    pathname = pathname.replace(/\/+$/, "");
+
+    if (pathname === "") {
+      return `${protocol}//${hostname}`;
+    }
+
+    return `${protocol}//${hostname}${pathname}`;
+  } catch {
+    return input.trim().toLowerCase();
   }
-  return url.toLowerCase();
 }
 
 function getDomain(url) {
   try {
-    return new URL(url).hostname.replace("www.", "");
+    return new URL(url).hostname.replace(/^www\./, "");
   } catch {
     return null;
   }
 }
 
-function analyzeUrl(url) {
-  const words = ["login", "verify", "bank", "otp", "password", "wallet", "free", "bonus", "gift", "claim", "reward", "win", "prize"];
+// -----------------------------
+// Typosquatting helpers
+// -----------------------------
+const protectedBrands = [
+  { brand: "paypal", domains: ["paypal.com"] },
+  { brand: "google", domains: ["google.com"] },
+  { brand: "facebook", domains: ["facebook.com"] },
+  { brand: "microsoft", domains: ["microsoft.com"] },
+  { brand: "apple", domains: ["apple.com"] },
+  { brand: "amazon", domains: ["amazon.com"] },
+  { brand: "kbz", domains: ["kbzbank.com", "kpay.com.mm"] },
+  { brand: "aya", domains: ["ayabank.com"] },
+  { brand: "cb", domains: ["cbbank.com.mm"] },
+  { brand: "wavepay", domains: ["wavepay.com.mm"] }
+];
+
+function getRootDomain(domain) {
+  if (!domain) return "";
+  const parts = domain.toLowerCase().split(".");
+  if (parts.length <= 2) return parts[0];
+  return parts[parts.length - 2];
+}
+
+function normalizeLookalike(text) {
+  return text
+    .toLowerCase()
+    .replace(/0/g, "o")
+    .replace(/1/g, "l")
+    .replace(/3/g, "e")
+    .replace(/5/g, "s")
+    .replace(/@/g, "a")
+    .replace(/\$/g, "s");
+}
+
+function levenshteinDistance(a, b) {
+  const matrix = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+function checkTyposquatting(domain) {
+  const reasons = [];
+  let score = 0;
+
+  if (!domain) {
+    return { score, reasons };
+  }
+
+  const cleanDomain = domain.toLowerCase().replace(/^www\./, "");
+  const root = getRootDomain(cleanDomain);
+  const normalizedRoot = normalizeLookalike(root);
+
+  for (const item of protectedBrands) {
+    const isOfficialDomain = item.domains.includes(cleanDomain);
+
+    if (isOfficialDomain) {
+      continue;
+    }
+
+    const protectedBrand = item.brand;
+    const normalizedBrand = normalizeLookalike(protectedBrand);
+    const distance = levenshteinDistance(normalizedRoot, normalizedBrand);
+
+    if (
+      normalizedRoot === normalizedBrand ||
+      distance === 1 ||
+      root.includes(protectedBrand) ||
+      normalizedRoot.includes(normalizedBrand)
+    ) {
+      score += 35;
+      reasons.push(
+        `Possible typosquatting or brand impersonation: looks similar to ${protectedBrand}`
+      );
+    }
+  }
+
+  return { score, reasons };
+}
+
+// -----------------------------
+// Heuristic analysis
+// -----------------------------
+function analyzeUrl(url, domain) {
+  const words = [
+    "login",
+    "verify",
+    "bank",
+    "otp",
+    "password",
+    "wallet",
+    "free",
+    "bonus",
+    "gift",
+    "claim",
+    "reward",
+    "win",
+    "prize",
+    "security",
+    "update",
+    "account"
+  ];
+
   let score = 0;
   let reasons = [];
 
@@ -60,9 +202,16 @@ function analyzeUrl(url) {
     reasons.push("Contains @ symbol");
   }
 
+  const typoResult = checkTyposquatting(domain);
+  score += typoResult.score;
+  reasons = [...reasons, ...typoResult.reasons];
+
   return { score, reasons };
 }
 
+// -----------------------------
+// Google Safe Browsing
+// -----------------------------
 async function checkGoogleSafeBrowsing(url) {
   const key = process.env.GOOGLE_SAFE_BROWSING_KEY;
 
@@ -122,6 +271,9 @@ async function checkGoogleSafeBrowsing(url) {
   }
 }
 
+// -----------------------------
+// Final decision
+// -----------------------------
 function finalDecision(googleResult, heuristicResult) {
   if (googleResult.match) {
     return {
@@ -130,29 +282,33 @@ function finalDecision(googleResult, heuristicResult) {
       confidence: 95,
       description: "This URL is listed as unsafe by Google Safe Browsing.",
       reason: googleResult.reason,
-      recommendation: "Do not open this link. Do not enter passwords, OTP, banking information, or personal data."
+      recommendation:
+        "Do not open this link. Do not enter passwords, OTP, banking information, or personal data."
     };
   }
 
-  if (heuristicResult.score >= 40) {
+  if (heuristicResult.score >= 60) {
     return {
       status: "dangerous",
       trust_level: "red",
       confidence: 90,
-      description: "This URL appears dangerous based on suspicious patterns.",
+      description:
+        "This URL appears dangerous based on phishing and impersonation indicators.",
       reason: heuristicResult.reasons.join(", "),
-      recommendation: "Avoid opening this link. Verify the source using an official website."
+      recommendation:
+        "Do not open this site. Use the official website by typing the address manually."
     };
   }
 
-  if (heuristicResult.score >= 20) {
+  if (heuristicResult.score >= 30) {
     return {
       status: "suspicious",
       trust_level: "yellow",
-      confidence: 70,
+      confidence: 75,
       description: "This URL has suspicious indicators.",
       reason: heuristicResult.reasons.join(", "),
-      recommendation: "Do not enter sensitive information. Check the source carefully."
+      recommendation:
+        "Do not enter sensitive information. Verify the source carefully before proceeding."
     };
   }
 
@@ -168,6 +324,9 @@ function finalDecision(googleResult, heuristicResult) {
   };
 }
 
+// -----------------------------
+// Routes
+// -----------------------------
 app.get("/health", (req, res) => {
   res.json({ status: "ok", project: "TrustTrack Backend" });
 });
@@ -206,7 +365,7 @@ app.post("/scan", async (req, res) => {
     const display_value = domain || normalized_url;
 
     const googleResult = await checkGoogleSafeBrowsing(normalized_url);
-    const heuristicResult = analyzeUrl(normalized_url);
+    const heuristicResult = analyzeUrl(normalized_url, domain);
     const result = finalDecision(googleResult, heuristicResult);
 
     const { data, error } = await supabase
@@ -246,6 +405,7 @@ app.post("/scan", async (req, res) => {
       reason: data.reason,
       recommendation: data.recommendation,
       google_safe_browsing_result: data.google_safe_browsing_result,
+      heuristic_result: data.heuristic_result,
       created_at: data.created_at
     });
   } catch (err) {
