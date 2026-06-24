@@ -456,6 +456,12 @@ app.post("/scan", async (req, res) => {
       return res.status(400).json({ error: "input_value is required" });
     }
 
+    if (!isValidUrlInput(input_value)) {
+      return res.status(400).json({
+        error: "Invalid URL. Please enter a valid website link, for example: google.com or https://google.com"
+      });
+    }
+
     const normalized_url = normalizeUrl(input_value);
     const domain = getDomain(normalized_url);
     const display_value = domain || normalized_url;
