@@ -746,22 +746,20 @@ app.post("/telegram/webhook", async (req, res) => {
         const reply =
         `${statusEmoji} *TrustTrack Report*
 
-        🌐 *URL*
-        ${display_value}
+        🌐 *URL:* ${display_value}
 
-        🛡️ *Status*
-        ${result.status.toUpperCase()}
+        🛡️ *Status:* ${result.status.toUpperCase()}
 
-        📋 *Reason*
+        📋 *Reason:*
         ${result.reason}
 
-        💡 *Recommendation*
+        💡 *Recommendation:*
         ${result.recommendation}
 
-        🔎 *Detection Sources*
-        Google Safe Browsing: ${googleResult.match ? "⚠️ Match" : "✅ No Match"}
-        PhishTank: ${phishTankResult.match ? "⚠️ Match" : "✅ No Match"}
-        Typo Detection: ${
+        🔎 *Detection Sources:*
+        • Google Safe Browsing: ${googleResult.match ? "⚠️ Match" : "✅ No Match"}
+        • PhishTank: ${phishTankResult.match ? "⚠️ Match" : "✅ No Match"}
+        • Typo Detection: ${
           heuristicResult.reasons.some(r =>
             r.toLowerCase().includes("typosquatting") ||
             r.toLowerCase().includes("impersonation")
