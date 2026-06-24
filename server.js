@@ -736,25 +736,39 @@ app.post("/telegram/webhook", async (req, res) => {
         ? "🟡"
         : "🔴";
 
-    const reply =
-`${trustEmoji} *TrustTrack Report*
+    const statusEmoji =
+      result.status === "dangerous"
+        ? "🔴"
+        : result.status === "suspicious"
+        ? "🟡"
+        : "🟢";
 
-*URL:* ${display_value}
-*Status:* ${result.status.toUpperCase()}
+        const reply =
+        `${statusEmoji} *TrustTrack Report*
 
-*Description:*
-${result.description}
+        🌐 *URL*
+        ${display_value}
 
-*Reason:*
-${result.reason}
+        🛡️ *Status*
+        ${result.status.toUpperCase()}
 
-*Recommendation:*
-${result.recommendation}
+        📋 *Reason*
+        ${result.reason}
 
-*Sources:*
-Google Safe Browsing: ${googleResult.match ? "Match" : "No Match"}
-PhishTank: ${phishTankResult.match ? "Match" : "No Match"}
-Heuristic Score: ${heuristicResult.score}`;
+        💡 *Recommendation*
+        ${result.recommendation}
+
+        🔎 *Detection Sources*
+        Google Safe Browsing: ${googleResult.match ? "⚠️ Match" : "✅ No Match"}
+        PhishTank: ${phishTankResult.match ? "⚠️ Match" : "✅ No Match"}
+        Typo Detection: ${
+          heuristicResult.reasons.some(r =>
+            r.toLowerCase().includes("typosquatting") ||
+            r.toLowerCase().includes("impersonation")
+          )
+            ? "⚠️ Detected"
+            : "✅ No Match"
+        }`;
 
     await sendTelegramMessage(chatId, reply);
 
