@@ -448,6 +448,46 @@ app.get("/results", async (req, res) => {
   res.json(data);
 });
 
+
+
+
+
+async function resolveRedirects(url) {
+  try {
+    const response = await axios.get(url, {
+      maxRedirects: 5,
+      timeout: 8000,
+      validateStatus: () => true
+    });
+
+    const finalUrl =
+      response.request?.res?.responseUrl || url;
+
+    return {
+      checked: true,
+      original_url: url,
+      final_url: finalUrl,
+      redirected: finalUrl !== url
+    };
+  } catch (error) {
+    return {
+      checked: false,
+      original_url: url,
+      final_url: url,
+      redirected: false,
+      error: error.message
+    };
+  }
+}
+
+
+
+
+
+
+
+
+
 app.post("/scan", async (req, res) => {
   try {
     const { input_value } = req.body;
@@ -466,9 +506,13 @@ app.post("/scan", async (req, res) => {
     const domain = getDomain(normalized_url);
     const display_value = domain || normalized_url;
 
-    const googleResult = await checkGoogleSafeBrowsing(normalized_url);
-    const phishTankResult = await checkPhishTank(normalized_url);
-    const heuristicResult = analyzeUrl(normalized_url, domain);
+    const redirectResult = await resolveRedirects(normalized_url);
+    const scanUrl = redirectResult.final_url || normalized_url;
+    const scanDomain = getDomain(scanUrl);
+
+    const googleResult = await checkGoogleSafeBrowsing(scanUrl);
+    const phishTankResult = await checkPhishTank(scanUrl);
+    const heuristicResult = analyzeUrl(scanUrl, scanDomain);
     const result = finalDecision(googleResult, phishTankResult, heuristicResult);
 
     const { data, error } = await supabase
@@ -485,6 +529,7 @@ app.post("/scan", async (req, res) => {
         description: result.description,
         reason: result.reason,
         recommendation: result.recommendation,
+        redirect_result: redirectResult,
         google_safe_browsing_result: googleResult,
         phishtank_result: phishTankResult,
         heuristic_result: heuristicResult,
@@ -508,6 +553,7 @@ app.post("/scan", async (req, res) => {
       description: data.description,
       reason: data.reason,
       recommendation: data.recommendation,
+      redirect_result: data.redirect_result,
       google_safe_browsing_result: data.google_safe_browsing_result,
       phishtank_result: data.phishtank_result,
       heuristic_result: data.heuristic_result,
