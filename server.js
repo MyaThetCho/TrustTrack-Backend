@@ -741,7 +741,6 @@ app.post("/telegram/webhook", async (req, res) => {
 
 *URL:* ${display_value}
 *Status:* ${result.status.toUpperCase()}
-*Confidence:* ${result.confidence}%
 
 *Description:*
 ${result.description}
