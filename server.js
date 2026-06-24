@@ -20,6 +20,36 @@ const supabase = createClient(
 // -----------------------------
 // URL normalization
 // -----------------------------
+
+
+function isValidUrlInput(input) {
+  const value = input.trim();
+
+  // reject empty or single words like "apple", "bank", "hello"
+  if (!value || value.includes(" ")) {
+    return false;
+  }
+
+  // remove protocol if exists
+  const withoutProtocol = value.replace(/^https?:\/\//i, "");
+
+  // get only domain part before slash
+  const domainPart = withoutProtocol.split("/")[0];
+
+  // must contain at least one dot
+  if (!domainPart.includes(".")) {
+    return false;
+  }
+
+  // basic domain format check
+  const domainRegex =
+    /^(?!-)([a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,63}$/;
+
+  return domainRegex.test(domainPart);
+}
+
+
+
 function normalizeUrl(input) {
   try {
     let raw = input.trim();
@@ -310,7 +340,7 @@ async function checkPhishTank(url) {
         : "No verified valid phishing match in PhishTank",
       raw: result
     };
-    
+
   } catch (error) {
     return {
       checked: false,
