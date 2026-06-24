@@ -586,6 +586,67 @@ app.post("/flag", async (req, res) => {
   res.json(data);
 });
 
+
+
+
+// Get all pending user reports for admin
+app.get("/admin/flags", async (req, res) => {
+  const { data, error } = await supabase
+    .from("flags")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json(data);
+});
+
+// Approve a user report
+app.patch("/admin/flags/:id/approve", async (req, res) => {
+  const { id } = req.params;
+  const { reviewed_by, admin_note } = req.body;
+
+  const { data, error } = await supabase
+    .from("flags")
+    .update({
+      status: "approved",
+      approved_at: new Date().toISOString(),
+      reviewed_by: reviewed_by || "admin",
+      admin_note: admin_note || null
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json(data);
+});
+
+// Reject a user report
+app.patch("/admin/flags/:id/reject", async (req, res) => {
+  const { id } = req.params;
+  const { reviewed_by, admin_note } = req.body;
+
+  const { data, error } = await supabase
+    .from("flags")
+    .update({
+      status: "rejected",
+      reviewed_by: reviewed_by || "admin",
+      admin_note: admin_note || null
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json(data);
+});
+
+
+
+
 app.listen(PORT, () => {
   console.log(`TrustTrack backend running on port ${PORT}`);
 });
