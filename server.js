@@ -271,10 +271,58 @@ async function checkGoogleSafeBrowsing(url) {
   }
 }
 
+
+
+async function checkPhishTank(url) {
+  const endpoint = "https://checkurl.phishtank.com/checkurl/";
+
+  const formData = new URLSearchParams();
+  formData.append("url", url);
+  formData.append("format", "json");
+
+  if (process.env.PHISHTANK_APP_KEY) {
+    formData.append("app_key", process.env.PHISHTANK_APP_KEY);
+  }
+
+  try {
+    const response = await axios.post(endpoint, formData, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "phishtank/trusttrack"
+      }
+    });
+
+    const result = response.data?.results;
+
+    return {
+      checked: true,
+      match: result?.in_database === true,
+      verified: result?.verified === true,
+      valid: result?.valid === true,
+      reason:
+        result?.in_database === true
+          ? "Matched PhishTank phishing database"
+          : "No match in PhishTank",
+      raw: result
+    };
+  } catch (error) {
+    return {
+      checked: false,
+      match: false,
+      verified: false,
+      valid: false,
+      reason: "PhishTank check failed",
+      error: error.message
+    };
+  }
+}
+
+
+
 // -----------------------------
 // Final decision
 // -----------------------------
-function finalDecision(googleResult, heuristicResult) {
+function finalDecision(googleResult, phishTankResult, heuristicResult) {
   if (googleResult.match) {
     return {
       status: "dangerous",
@@ -286,6 +334,18 @@ function finalDecision(googleResult, heuristicResult) {
         "Do not open this link. Do not enter passwords, OTP, banking information, or personal data."
     };
   }
+
+  if (phishTankResult.match && phishTankResult.verified && phishTankResult.valid) {
+  return {
+    status: "dangerous",
+    trust_level: "red",
+    confidence: 96,
+    description: "This URL is listed as a verified phishing site by PhishTank.",
+    reason: phishTankResult.reason,
+    recommendation:
+      "Do not open this link. Do not enter passwords, OTP, banking information, or personal data."
+  };
+}
 
   if (heuristicResult.score >= 60) {
     return {
@@ -365,8 +425,9 @@ app.post("/scan", async (req, res) => {
     const display_value = domain || normalized_url;
 
     const googleResult = await checkGoogleSafeBrowsing(normalized_url);
+    const phishTankResult = await checkPhishTank(normalized_url);
     const heuristicResult = analyzeUrl(normalized_url, domain);
-    const result = finalDecision(googleResult, heuristicResult);
+    const result = finalDecision(googleResult, phishTankResult, heuristicResult);
 
     const { data, error } = await supabase
       .from("scans")
@@ -383,6 +444,7 @@ app.post("/scan", async (req, res) => {
         reason: result.reason,
         recommendation: result.recommendation,
         google_safe_browsing_result: googleResult,
+        phishtank_result: phishTankResult,
         heuristic_result: heuristicResult,
         source: "website",
         is_public: true
@@ -405,6 +467,7 @@ app.post("/scan", async (req, res) => {
       reason: data.reason,
       recommendation: data.recommendation,
       google_safe_browsing_result: data.google_safe_browsing_result,
+      phishtank_result: data.phishtank_result,
       heuristic_result: data.heuristic_result,
       created_at: data.created_at
     });
