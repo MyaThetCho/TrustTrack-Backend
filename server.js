@@ -647,6 +647,130 @@ app.patch("/admin/flags/:id/reject", async (req, res) => {
 
 
 
+
+
+async function sendTelegramMessage(chatId, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!token) {
+    console.log("Telegram token missing");
+    return;
+  }
+
+  await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+    chat_id: chatId,
+    text,
+    parse_mode: "Markdown"
+  });
+}
+
+app.post("/telegram/webhook", async (req, res) => {
+  try {
+    const message = req.body.message;
+    const chatId = message?.chat?.id;
+    const text = message?.text?.trim();
+
+    if (!chatId) {
+      return res.sendStatus(200);
+    }
+
+    if (!text || text === "/start") {
+      await sendTelegramMessage(
+        chatId,
+        "👋 Welcome to *TrustTrack*.\n\nSend me a suspicious link and I will check it for scams, phishing, QR redirects, and brand impersonation.\n\nExample:\n`paypa1.com`"
+      );
+      return res.sendStatus(200);
+    }
+
+    if (text === "/help") {
+      await sendTelegramMessage(
+        chatId,
+        "🔍 *How to use TrustTrack Bot*\n\n1. Send any website link\n2. I will analyze it\n3. You will receive a trust report\n\nExample:\n`google.com`\n`paypa1.com`\n`free-bank-login-bonus.com`"
+      );
+      return res.sendStatus(200);
+    }
+
+    if (!isValidUrlInput(text)) {
+      await sendTelegramMessage(
+        chatId,
+        "⚠️ Please send a valid website link.\n\nExample:\n`google.com` or `https://google.com`"
+      );
+      return res.sendStatus(200);
+    }
+
+    const normalized_url = normalizeUrl(text);
+    const redirectResult = await resolveRedirects(normalized_url);
+    const scanUrl = redirectResult.final_url || normalized_url;
+    const domain = getDomain(scanUrl);
+    const display_value = domain || scanUrl;
+
+    const googleResult = await checkGoogleSafeBrowsing(scanUrl);
+    const phishTankResult = await checkPhishTank(scanUrl);
+    const heuristicResult = analyzeUrl(scanUrl, domain);
+    const result = finalDecision(googleResult, phishTankResult, heuristicResult);
+
+    await supabase.from("scans").insert({
+      input_type: "telegram",
+      input_value: text,
+      normalized_url: scanUrl,
+      domain,
+      display_value,
+      trust_level: result.trust_level,
+      status: result.status,
+      confidence: result.confidence,
+      description: result.description,
+      reason: result.reason,
+      recommendation: result.recommendation,
+      google_safe_browsing_result: googleResult,
+      phishtank_result: phishTankResult,
+      heuristic_result: heuristicResult,
+      redirect_result: redirectResult,
+      source: "telegram",
+      is_public: true
+    });
+
+    const trustEmoji =
+      result.trust_level === "green"
+        ? "🟢"
+        : result.trust_level === "yellow"
+        ? "🟡"
+        : "🔴";
+
+    const reply =
+`${trustEmoji} *TrustTrack Report*
+
+*URL:* ${display_value}
+*Status:* ${result.status.toUpperCase()}
+*Confidence:* ${result.confidence}%
+
+*Description:*
+${result.description}
+
+*Reason:*
+${result.reason}
+
+*Recommendation:*
+${result.recommendation}
+
+*Sources:*
+Google Safe Browsing: ${googleResult.match ? "Match" : "No Match"}
+PhishTank: ${phishTankResult.match ? "Match" : "No Match"}
+Heuristic Score: ${heuristicResult.score}`;
+
+    await sendTelegramMessage(chatId, reply);
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Telegram webhook error:", error.message);
+    res.sendStatus(200);
+  }
+});
+
+
+
+
+
+
 app.listen(PORT, () => {
   console.log(`TrustTrack backend running on port ${PORT}`);
 });
