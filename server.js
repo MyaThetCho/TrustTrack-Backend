@@ -294,17 +294,23 @@ async function checkPhishTank(url) {
 
     const result = response.data?.results;
 
+    const isRealPhishing =
+      result?.in_database === true &&
+      result?.verified === true &&
+      result?.valid === true;
+
     return {
       checked: true,
-      match: result?.in_database === true,
+      match: isRealPhishing,
+      in_database: result?.in_database === true,
       verified: result?.verified === true,
       valid: result?.valid === true,
-      reason:
-        result?.in_database === true
-          ? "Matched PhishTank phishing database"
-          : "No match in PhishTank",
+      reason: isRealPhishing
+        ? "Matched verified valid PhishTank phishing database"
+        : "No verified valid phishing match in PhishTank",
       raw: result
     };
+    
   } catch (error) {
     return {
       checked: false,
