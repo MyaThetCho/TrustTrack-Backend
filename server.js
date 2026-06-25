@@ -549,37 +549,55 @@ async function resolveRedirects(url) {
 
 
 
-async function checkKaggleThreatDatabase(url) {
+async function checkKaggleThreatDatabase(url, domain) {
   try {
+    const cleanUrl = url
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .replace(/\/+$/g, "")
+      .toLowerCase();
+
+    const cleanDomain = domain
+      ? domain.replace(/^www\./i, "").replace(/\/+$/g, "").toLowerCase()
+      : cleanUrl.split("/")[0];
+
     const { data, error } = await supabase
       .from("threat_urls")
-      .select("url, type")
-      .eq("url", url)
+      .select("url, type, source")
+      .or(
+        `url.eq.${url},url.eq.${cleanUrl},url.eq.${cleanDomain}`
+      )
       .limit(1);
 
     if (error) throw error;
 
     if (data && data.length > 0) {
       const threat = data[0];
+      const threatType = threat.type?.toLowerCase();
 
-      if (
-        ["phishing", "malware", "defacement"].includes(
-          threat.type.toLowerCase()
-        )
-      ) {
+      if (["phishing", "malware", "defacement"].includes(threatType)) {
         return {
           checked: true,
           match: true,
           type: threat.type,
-          reason: `Matched Kaggle threat database (${threat.type})`
+          source: threat.source,
+          reason: `Matched TrustTrack threat database (${threat.type})`
         };
       }
+
+      return {
+        checked: true,
+        match: false,
+        type: threat.type,
+        source: threat.source,
+        reason: `Matched database record but classified as ${threat.type}`
+      };
     }
 
     return {
       checked: true,
       match: false,
-      reason: "No match in Kaggle database"
+      reason: "No match in TrustTrack threat database"
     };
   } catch (err) {
     return {
@@ -589,7 +607,6 @@ async function checkKaggleThreatDatabase(url) {
     };
   }
 }
-
 
 
 
