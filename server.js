@@ -285,6 +285,63 @@ function analyzeUrl(url, domain = "") {
     reasons.push("Contains numbers in domain");
   }
 
+
+  const protectedBrands = [
+  { brand: "paypal", domain: "paypal.com" },
+  { brand: "google", domain: "google.com" },
+  { brand: "facebook", domain: "facebook.com" },
+  { brand: "amazon", domain: "amazon.com" },
+  { brand: "microsoft", domain: "microsoft.com" },
+  { brand: "apple", domain: "apple.com" },
+  { brand: "binance", domain: "binance.com" },
+  { brand: "kbz", domain: "kbzbank.com" },
+  { brand: "aya", domain: "ayabank.com" }
+];
+
+function levenshtein(a, b) {
+  const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]);
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      matrix[i][j] =
+        b.charAt(i - 1) === a.charAt(j - 1)
+          ? matrix[i - 1][j - 1]
+          : Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+const cleanDomain = domain.replace(/^www\./i, "").toLowerCase();
+const domainName = cleanDomain.split(".")[0];
+
+for (const item of protectedBrands) {
+  const brandName = item.domain.split(".")[0];
+
+  if (cleanDomain === item.domain) {
+    continue;
+  }
+
+  const distance = levenshtein(domainName, brandName);
+
+  if (distance <= 1 || domainName.includes(item.brand)) {
+    score += 35;
+    reasons.push(
+      `Possible typosquatting or brand impersonation: looks similar to ${item.brand}`
+    );
+    break;
+  }
+}
+
   return {
     score,
     reasons
