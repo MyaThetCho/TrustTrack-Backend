@@ -410,7 +410,7 @@ async function checkPhishTank(url) {
 // -----------------------------
 // Final decision
 // -----------------------------
-function finalDecision(googleResult, phishTankResult, heuristicResult) {
+function finalDecision(googleResult, kaggleResult, phishTankResult, heuristicResult) {
   if (googleResult.match) {
     return {
       status: "dangerous",
@@ -422,6 +422,20 @@ function finalDecision(googleResult, phishTankResult, heuristicResult) {
         "Do not open this link. Do not enter passwords, OTP, banking information, or personal data."
     };
   }
+
+    if (kaggleResult.match) {
+    return {
+      status: "dangerous",
+      trust_level: "red",
+      confidence: 95,
+      description:
+        "This URL exists in the TrustTrack threat intelligence database.",
+      reason: kaggleResult.reason,
+      recommendation:
+        "Do not visit this website. It has been identified as malicious."
+    };
+  }
+
 
   if (phishTankResult.match && phishTankResult.verified && phishTankResult.valid) {
   return {
@@ -535,6 +549,47 @@ async function resolveRedirects(url) {
 
 
 
+async function checkKaggleThreatDatabase(url) {
+  try {
+    const { data, error } = await supabase
+      .from("threat_urls")
+      .select("url, type")
+      .eq("url", url)
+      .limit(1);
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      const threat = data[0];
+
+      if (
+        ["phishing", "malware", "defacement"].includes(
+          threat.type.toLowerCase()
+        )
+      ) {
+        return {
+          checked: true,
+          match: true,
+          type: threat.type,
+          reason: `Matched Kaggle threat database (${threat.type})`
+        };
+      }
+    }
+
+    return {
+      checked: true,
+      match: false,
+      reason: "No match in Kaggle database"
+    };
+  } catch (err) {
+    return {
+      checked: false,
+      match: false,
+      reason: err.message
+    };
+  }
+}
+
 
 
 
@@ -564,8 +619,9 @@ app.post("/scan", async (req, res) => {
 
     const googleResult = await checkGoogleSafeBrowsing(scanUrl);
     const phishTankResult = await checkPhishTank(scanUrl);
-    const heuristicResult = analyzeUrl(scanUrl, scanDomain);
-    const result = finalDecision(googleResult, phishTankResult, heuristicResult);
+    const kaggleResult = await checkKaggleThreatDatabase(normalized_url);
+    const heuristicResult = analyzeUrl(normalized_url, domain);
+    const result = finalDecision(googleResult, kaggleResult, phishTankResult, heuristicResult);
 
     const { data, error } = await supabase
       .from("scans")
@@ -585,6 +641,7 @@ app.post("/scan", async (req, res) => {
         google_safe_browsing_result: googleResult,
         phishtank_result: phishTankResult,
         heuristic_result: heuristicResult,
+        kaggle_result: kaggleResult,
         source: "website",
         is_public: true
       })
@@ -609,6 +666,7 @@ app.post("/scan", async (req, res) => {
       google_safe_browsing_result: data.google_safe_browsing_result,
       phishtank_result: data.phishtank_result,
       heuristic_result: data.heuristic_result,
+      kaggle_result: data.kaggle_result,
       created_at: data.created_at
     });
   } catch (err) {
@@ -759,7 +817,7 @@ app.post("/telegram/webhook", async (req, res) => {
     const googleResult = await checkGoogleSafeBrowsing(scanUrl);
     const phishTankResult = await checkPhishTank(scanUrl);
     const heuristicResult = analyzeUrl(scanUrl, domain);
-    const result = finalDecision(googleResult, phishTankResult, heuristicResult);
+    const result = finalDecision(googleResult, kaggleResult, phishTankResult, heuristicResult);
 
     await supabase.from("scans").insert({
       input_type: "telegram",
