@@ -636,7 +636,7 @@ app.post("/scan", async (req, res) => {
 
     const googleResult = await checkGoogleSafeBrowsing(scanUrl);
     const phishTankResult = await checkPhishTank(scanUrl);
-    const kaggleResult = await checkKaggleThreatDatabase(normalized_url);
+    const kaggleResult = await checkKaggleThreatDatabase(scanUrl, scanDomain);
     const heuristicResult = analyzeUrl(normalized_url, domain);
     const result = finalDecision(googleResult, kaggleResult, phishTankResult, heuristicResult);
 
@@ -834,6 +834,7 @@ app.post("/telegram/webhook", async (req, res) => {
     const googleResult = await checkGoogleSafeBrowsing(scanUrl);
     const phishTankResult = await checkPhishTank(scanUrl);
     const heuristicResult = analyzeUrl(scanUrl, domain);
+    const kaggleResult = await checkKaggleThreatDatabase(scanUrl, domain);
     const result = finalDecision(googleResult, kaggleResult, phishTankResult, heuristicResult);
 
     await supabase.from("scans").insert({
@@ -851,6 +852,7 @@ app.post("/telegram/webhook", async (req, res) => {
       google_safe_browsing_result: googleResult,
       phishtank_result: phishTankResult,
       heuristic_result: heuristicResult,
+      kaggle_result: kaggleResult,
       redirect_result: redirectResult,
       source: "telegram",
       is_public: true
