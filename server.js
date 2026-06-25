@@ -187,7 +187,7 @@ function checkTyposquatting(domain) {
 // -----------------------------
 // Heuristic analysis
 // -----------------------------
-function analyzeUrl(url, domain) {
+function analyzeUrl(url, domain = "") {
   const words = [
     "login",
     "verify",
@@ -202,7 +202,7 @@ function analyzeUrl(url, domain) {
     "reward",
     "win",
     "prize",
-    "security",
+    "secure",
     "update",
     "account"
   ];
@@ -210,33 +210,85 @@ function analyzeUrl(url, domain) {
   let score = 0;
   let reasons = [];
 
+  // Suspicious keywords
   words.forEach((word) => {
-    if (url.includes(word)) {
+    if (url.toLowerCase().includes(word)) {
       score += 10;
       reasons.push(`Contains suspicious keyword: ${word}`);
     }
   });
 
+  // No HTTPS
   if (!url.startsWith("https://")) {
-    score += 20;
-    reasons.push("No HTTPS");
+    score += 30;
+    reasons.push("No HTTPS encryption");
   }
 
+  // Very long URL
   if (url.length > 80) {
     score += 10;
     reasons.push("Very long URL");
   }
 
+  // Contains @ symbol
   if (url.includes("@")) {
     score += 20;
     reasons.push("Contains @ symbol");
   }
 
-  const typoResult = checkTyposquatting(domain);
-  score += typoResult.score;
-  reasons = [...reasons, ...typoResult.reasons];
+  // Long hexadecimal or encoded tracking IDs
+  const hexPattern = /[a-f0-9]{20,}/i;
 
-  return { score, reasons };
+  if (hexPattern.test(url)) {
+    score += 15;
+    reasons.push("Contains long tracking or encoded identifier");
+  }
+
+  // Marketing redirect patterns
+  const redirectPatterns = [
+    "/mo/",
+    "/go/",
+    "/track/",
+    "/redirect/",
+    "/click/",
+    "/out/"
+  ];
+
+  redirectPatterns.forEach((pattern) => {
+    if (url.toLowerCase().includes(pattern)) {
+      score += 10;
+      reasons.push(`Uses redirect pattern: ${pattern}`);
+    }
+  });
+
+  // Multiple subdomains
+  if (domain) {
+    const parts = domain.split(".");
+
+    if (parts.length >= 4) {
+      score += 10;
+      reasons.push("Contains multiple subdomains");
+    }
+  }
+
+  // Excessive hyphens
+  const hyphenCount = (domain.match(/-/g) || []).length;
+
+  if (hyphenCount >= 3) {
+    score += 15;
+    reasons.push("Excessive hyphens in domain");
+  }
+
+  // Numbers inside domain
+  if (/\d/.test(domain)) {
+    score += 10;
+    reasons.push("Contains numbers in domain");
+  }
+
+  return {
+    score,
+    reasons
+  };
 }
 
 // -----------------------------
@@ -677,7 +729,7 @@ app.post("/telegram/webhook", async (req, res) => {
     if (!text || text === "/start") {
       await sendTelegramMessage(
         chatId,
-        "👋 Welcome to *TrustTrack*.\n\nSend me a suspicious link and I will check it for scams, phishing, QR redirects, and brand impersonation.\n\nExample:\n`paypa1.com`"
+        "👋 Welcome to *TrustTrack*.\n\nSend me a suspicious link and I will check it for scams, phishing, QR redirects, and brand impersonation.\n\nExample:\n`paypal.com`"
       );
       return res.sendStatus(200);
     }
